@@ -1,0 +1,2 @@
+include ':unity-texture-renderer'
+rootProject.name = "TextureRendererPlugIn"
