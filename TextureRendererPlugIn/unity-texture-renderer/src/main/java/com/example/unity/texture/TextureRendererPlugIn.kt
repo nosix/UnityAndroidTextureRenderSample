@@ -59,6 +59,7 @@ class TextureRendererPlugIn {
                     isFrameAvailable = false
                     context.updateTexImage(texture)
                     drawer.draw(surface)
+                    delay(texture.updateDelayMillis)
                 }
             }
             finally {
