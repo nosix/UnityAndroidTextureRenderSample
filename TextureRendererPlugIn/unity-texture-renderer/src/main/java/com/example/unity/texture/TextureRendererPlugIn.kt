@@ -43,7 +43,7 @@ class TextureRendererPlugIn {
     private fun onRegister(texturePtr: Int, width: Int, height: Int) {
         val context = checkNotNull(mEGLContext) { "EGLContext is not initialized" }
         mRendererScope.launch {
-            val texture = context.createOffscreenTexture(texturePtr, width, height)
+            val texture = context.createSurfaceTexture(texturePtr, width, height)
             var isFrameAvailable = false
             val surface = context.createSurface(texture) {
                 isFrameAvailable = true
@@ -63,7 +63,7 @@ class TextureRendererPlugIn {
             }
             finally {
                 surface.release()
-                texture.close()
+                texture.release()
             }
         }
     }

@@ -24,6 +24,17 @@ class OffscreenEGLContext(shareContext: EGLContext) : Closeable {
 
     companion object {
         private val PBUFFER_SIZE = Size(1, 1)
+
+        private fun Int.toErrorString(): String = when (this) {
+            GL10.GL_NO_ERROR -> "no error"
+            GL10.GL_INVALID_ENUM -> "invalid enum"
+            GL10.GL_INVALID_VALUE -> "invalid value"
+            GL10.GL_INVALID_OPERATION -> "invalid operation"
+            GL10.GL_STACK_OVERFLOW -> "stack overflow"
+            GL10.GL_STACK_UNDERFLOW -> "stack underflow"
+            GL10.GL_OUT_OF_MEMORY -> "out of memory"
+            else -> "unknown"
+        }
     }
 
     private val mDisplay: EGLDisplay
@@ -84,13 +95,37 @@ class OffscreenEGLContext(shareContext: EGLContext) : Closeable {
         mSurface = surface
     }
 
-    fun createOffscreenTexture(textureId: Int, width: Int, height: Int): Texture {
+    fun createSurfaceTexture(textureId: Int, width: Int, height: Int): Texture {
         return run {
-            val offscreenTextureId = createOffscreenGLTexture()
-            val surfaceTexture = SurfaceTexture(offscreenTextureId)
-            surfaceTexture.setDefaultBufferSize(width, height)
-            Texture(textureId, width, height, offscreenTextureId, surfaceTexture)
+            when (getTarget(textureId)) {
+                GLES20.GL_TEXTURE_2D -> {
+                    val offscreenTextureId = createOffscreenGLTexture()
+                    val surfaceTexture = SurfaceTexture(offscreenTextureId)
+                    surfaceTexture.setDefaultBufferSize(width, height)
+                    Texture2D(textureId, width, height, offscreenTextureId, surfaceTexture)
+                }
+                GLES11Ext.GL_TEXTURE_EXTERNAL_OES -> {
+                    val surfaceTexture = SurfaceTexture(textureId)
+                    surfaceTexture.setDefaultBufferSize(width, height)
+                    TextureExternalOES(textureId, width, height, surfaceTexture)
+                }
+                else -> throw IllegalStateException("Invalid target of texture")
+            }
         }
+    }
+
+    private fun getTarget(textureId: Int): Int {
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
+        if (GLES20.glGetError() == GLES20.GL_NO_ERROR) {
+            Log.d(LogTag.CONTEXT, "target is TEXTURE_EXTERNAL_OES")
+            return GLES11Ext.GL_TEXTURE_EXTERNAL_OES
+        }
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId)
+        if (GLES20.glGetError() == GLES20.GL_NO_ERROR) {
+            Log.d(LogTag.CONTEXT, "target is TEXTURE_2D")
+            return GLES20.GL_TEXTURE_2D
+        }
+        throw IllegalStateException("Can't bind texture")
     }
 
     private fun createOffscreenGLTexture(): Int {
@@ -106,7 +141,7 @@ class OffscreenEGLContext(shareContext: EGLContext) : Closeable {
     fun createSurface(texture: Texture, onFrameAvailable: (SurfaceTexture) -> Unit): Surface {
         // TODO remove run?
         return run {
-            val surfaceTexture = texture.offscreenSurfaceTexture
+            val surfaceTexture = texture.surfaceTexture
             surfaceTexture.setOnFrameAvailableListener(onFrameAvailable)
             Surface(surfaceTexture)
         }
@@ -114,26 +149,8 @@ class OffscreenEGLContext(shareContext: EGLContext) : Closeable {
 
     fun updateTexImage(texture: Texture) {
         run {
-            val surfaceTexture = texture.offscreenSurfaceTexture
-            val offscreenTextureId = texture.offscreenTextureId
-            surfaceTexture.updateTexImage()
-            Log.d(
-                LogTag.CONTEXT,
-                "${GLES20.glIsTexture(offscreenTextureId)}, ${GLES20.glIsTexture(texture.textureId)}"
-            )
-            GLES32.glCopyImageSubData(
-                offscreenTextureId,
-                GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-                0, 0, 0, 0,
-                texture.textureId,
-                GLES20.GL_TEXTURE_2D,
-                0, 0, 0, 0,
-                texture.width, texture.height, 1
-            )
-            val error = GLES20.glGetError()
-            if (error != GLES20.GL_NO_ERROR) {
-                Log.w(LogTag.CONTEXT, error.toErrorString())
-            }
+            texture.surfaceTexture.updateTexImage()
+            texture.update()
         }
     }
 
@@ -164,30 +181,61 @@ class OffscreenEGLContext(shareContext: EGLContext) : Closeable {
         EGL14.eglTerminate(mDisplay)
     }
 
-    private fun Int.toErrorString(): String = when (this) {
-        GL10.GL_NO_ERROR -> "no error"
-        GL10.GL_INVALID_ENUM -> "invalid enum"
-        GL10.GL_INVALID_VALUE -> "invalid value"
-        GL10.GL_INVALID_OPERATION -> "invalid operation"
-        GL10.GL_STACK_OVERFLOW -> "stack overflow"
-        GL10.GL_STACK_UNDERFLOW -> "stack underflow"
-        GL10.GL_OUT_OF_MEMORY -> "out of memory"
-        else -> "unknown"
+    interface Texture {
+        val target: Int
+        val textureId: Int
+        val width: Int
+        val height: Int
+        var updateDelayMillis: Long
+        val surfaceTexture: SurfaceTexture
+        fun update()
+        fun release()
     }
 
-    class Texture(
-        val textureId: Int,
-        val width: Int,
-        val height: Int,
-        val offscreenTextureId: Int,
-        val offscreenSurfaceTexture: SurfaceTexture
-    ) : Closeable {
-        var updateDelayMillis: Long = 100
+    class TextureExternalOES(
+        override val textureId: Int,
+        override val width: Int,
+        override val height: Int,
+        override val surfaceTexture: SurfaceTexture
+    ) : Texture {
+        override val target: Int = GLES11Ext.GL_TEXTURE_EXTERNAL_OES
+        override var updateDelayMillis: Long = 100
 
-        override fun close() {
+        override fun update() {}
+        override fun release() {}
+    }
+
+    class Texture2D(
+        override val textureId: Int,
+        override val width: Int,
+        override val height: Int,
+        private val offscreenTextureId: Int,
+        private val offscreenSurfaceTexture: SurfaceTexture
+    ) : Texture {
+        override val target: Int = GLES20.GL_TEXTURE_2D
+        override var updateDelayMillis: Long = 100
+
+        override val surfaceTexture: SurfaceTexture = offscreenSurfaceTexture
+
+        override fun update() {
+            GLES32.glCopyImageSubData(
+                offscreenTextureId,
+                GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+                0, 0, 0, 0,
+                textureId,
+                GLES20.GL_TEXTURE_2D,
+                0, 0, 0, 0,
+                width, height, 1
+            )
+            val error = GLES20.glGetError()
+            if (error != GLES20.GL_NO_ERROR) {
+                Log.e(LogTag.CONTEXT, error.toErrorString())
+            }
+        }
+
+        override fun release() {
             offscreenSurfaceTexture.release()
             GLES20.glDeleteTextures(1, intArrayOf(offscreenTextureId), 0)
         }
     }
-
 }
