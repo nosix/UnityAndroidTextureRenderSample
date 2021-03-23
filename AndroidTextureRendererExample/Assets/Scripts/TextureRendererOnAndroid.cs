@@ -6,7 +6,6 @@ public class TextureRendererOnAndroid : MonoBehaviour
     [SerializeField] private RenderTexture renderTexture;
 
     private TextureRendererPlugIn _plugIn;
-    private Texture2D _texture;
 
     private void Start()
     {
@@ -25,8 +24,7 @@ public class TextureRendererOnAndroid : MonoBehaviour
         if (renderTexture != null)
         {
             Debug.Log("[TextureRendererOnAndroid] init render texture");
-            _texture = CreateTexture2D(renderTexture.width, renderTexture.height);
-            _plugIn.RegisterTexture(_texture);
+            _plugIn.RegisterTexture(renderTexture);
             return;
         }
 
@@ -34,9 +32,9 @@ public class TextureRendererOnAndroid : MonoBehaviour
         if (material != null)
         {
             Debug.Log("[TextureRendererOnAndroid] init material texture");
-            _texture = CreateTexture2D(1024, 1024);
-            material.mainTexture = _texture;
-            _plugIn.RegisterTexture(_texture);
+            var texture = CreateTexture2D(1024, 1024);
+            material.mainTexture = texture;
+            _plugIn.RegisterTexture(texture);
             return;
         }
 
@@ -44,9 +42,9 @@ public class TextureRendererOnAndroid : MonoBehaviour
         if (rawImage != null)
         {
             Debug.Log("[TextureRendererOnAndroid] init raw image texture");
-            _texture = CreateTexture2D(1024, 1024);
-            rawImage.texture = _texture;
-            _plugIn.RegisterTexture(_texture);
+            var texture = CreateTexture2D(1024, 1024);
+            rawImage.texture = texture;
+            _plugIn.RegisterTexture(texture);
             return;
         }
 
@@ -62,18 +60,5 @@ public class TextureRendererOnAndroid : MonoBehaviour
         };
         texture.Apply();
         return texture;
-    }
-
-    private void Update()
-    {
-        BlitRenderTexture();
-    }
-
-    private void BlitRenderTexture()
-    {
-        if (renderTexture is null) return;
-        renderTexture.enableRandomWrite = true;
-        RenderTexture.active = renderTexture;
-        Graphics.Blit(_texture, renderTexture);
     }
 }
