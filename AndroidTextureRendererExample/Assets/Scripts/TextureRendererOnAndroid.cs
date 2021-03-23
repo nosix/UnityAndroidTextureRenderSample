@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -6,26 +7,24 @@ public class TextureRendererOnAndroid : MonoBehaviour
     [SerializeField] private RenderTexture renderTexture;
 
     private TextureRendererPlugIn _plugIn;
+    private Texture2D _texture;
 
     private void Start()
     {
         _plugIn = FindObjectOfType<TextureRendererPlugIn>();
-        InitializeTexture2D();
+        _texture = InitializeTexture2D();
+        if (_texture == null) return;
+        _plugIn.RegisterTexture(_texture);
+        if (renderTexture is null) return;
+        StartCoroutine(BlitRenderTexture());
     }
 
-    private void InitializeTexture2D()
+    private Texture2D InitializeTexture2D()
     {
-        if (_plugIn == null)
-        {
-            Debug.LogError("[TextureRendererOnAndroid] WebViewPlugIn component is not found");
-            return;
-        }
-
         if (renderTexture != null)
         {
             Debug.Log("[TextureRendererOnAndroid] init render texture");
-            _plugIn.RegisterTexture(renderTexture);
-            return;
+            return CreateTexture2D(renderTexture.width, renderTexture.height);
         }
 
         var material = GetComponent<Renderer>()?.material;
@@ -34,8 +33,7 @@ public class TextureRendererOnAndroid : MonoBehaviour
             Debug.Log("[TextureRendererOnAndroid] init material texture");
             var texture = CreateTexture2D(1024, 1024);
             material.mainTexture = texture;
-            _plugIn.RegisterTexture(texture);
-            return;
+            return texture;
         }
 
         var rawImage = GetComponent<RawImage>();
@@ -44,11 +42,11 @@ public class TextureRendererOnAndroid : MonoBehaviour
             Debug.Log("[TextureRendererOnAndroid] init raw image texture");
             var texture = CreateTexture2D(1024, 1024);
             rawImage.texture = texture;
-            _plugIn.RegisterTexture(texture);
-            return;
+            return texture;
         }
 
         Debug.LogError("[TextureRendererOnAndroid] Texture not found.");
+        return null;
     }
 
     private static Texture2D CreateTexture2D(int width, int height)
@@ -60,5 +58,18 @@ public class TextureRendererOnAndroid : MonoBehaviour
         };
         texture.Apply();
         return texture;
+    }
+
+    private IEnumerator BlitRenderTexture()
+    {
+        while (true)
+        {
+            renderTexture.enableRandomWrite = true;
+            RenderTexture.active = renderTexture;
+            Graphics.Blit(_texture, renderTexture);
+            yield return null;
+        }
+
+        // ReSharper disable once IteratorNeverReturns
     }
 }
