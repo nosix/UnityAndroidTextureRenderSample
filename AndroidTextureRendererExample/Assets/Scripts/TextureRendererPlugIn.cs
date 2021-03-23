@@ -2,6 +2,7 @@
 using System.Runtime.InteropServices;
 using UnityEngine;
 
+// The Script Execution Order must be before TextureRendererOnAndroid.
 public class TextureRendererPlugIn : MonoBehaviour
 {
     private AndroidJavaObject _androidPlugInInstance;
